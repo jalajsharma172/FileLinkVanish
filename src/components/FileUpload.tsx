@@ -32,17 +32,26 @@ async function bundleMetadataAndEncryptedFile({
 
 async function uploadToPinata(formData: FormData) {
   const url = "https://api.pinata.cloud/pinning/pinFileToIPFS";
-  // DO NOT set 'Content-Type' header for FormData.
   const headers: Record<string, string> = {
     pinata_api_key: PINATA_API_KEY,
     pinata_secret_api_key: PINATA_SECRET_API_KEY,
     // 'Content-Type': ...  <-- Do NOT include this!
   };
 
+  // Print debugging info for FormData entries
   console.log("Uploading to Pinata: logging FormData entries ---");
   for (const [key, value] of formData.entries()) {
-    if (value instanceof File || value instanceof Blob) {
-      console.log(`FormData field: ${key}, filename: ${value instanceof File ? value.name : 'blob'}, size: ${value.size}, type: ${value.type}`);
+    if (
+      value &&
+      typeof value === "object" &&
+      "size" in value &&
+      "type" in value
+    ) {
+      // Most likely Blob or File
+      const obj = value as Blob;
+      console.log(
+        `FormData field: ${key}, filename: ${"name" in value ? (value as any).name : "blob"}, size: ${obj.size}, type: ${obj.type}`
+      );
     } else {
       console.log(`FormData field: ${key}, value: ${value}`);
     }
