@@ -1,4 +1,3 @@
-
 import React, { useRef, useState } from "react";
 import ExpirySelector from "./ExpirySelector";
 import ShareLinkModal from "./ShareLinkModal";
@@ -33,18 +32,40 @@ async function bundleMetadataAndEncryptedFile({
 
 async function uploadToPinata(formData: FormData) {
   const url = "https://api.pinata.cloud/pinning/pinFileToIPFS";
+  // DO NOT set 'Content-Type' header for FormData.
   const headers: Record<string, string> = {
     pinata_api_key: PINATA_API_KEY,
     pinata_secret_api_key: PINATA_SECRET_API_KEY,
+    // 'Content-Type': ...  <-- Do NOT include this!
   };
-  const res = await fetch(url, {
-    method: "POST",
-    body: formData,
-    headers,
-  });
-  if (!res.ok) throw new Error("IPFS upload failed");
-  const data = await res.json();
-  return data.IpfsHash;
+
+  console.log("Uploading to Pinata: logging FormData entries ---");
+  for (const [key, value] of formData.entries()) {
+    if (value instanceof File || value instanceof Blob) {
+      console.log(`FormData field: ${key}, filename: ${value instanceof File ? value.name : 'blob'}, size: ${value.size}, type: ${value.type}`);
+    } else {
+      console.log(`FormData field: ${key}, value: ${value}`);
+    }
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      body: formData,
+      headers,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Pinata upload failed, status:", res.status, "body:", errText);
+      throw new Error("IPFS upload failed: " + errText);
+    }
+    const data = await res.json();
+    return data.IpfsHash;
+  } catch (e) {
+    console.error("Caught error in uploadToPinata:", e);
+    throw e;
+  }
 }
 
 const downloadOptions = [
@@ -91,9 +112,16 @@ const FileUpload: React.FC = () => {
     setUploading(true);
     setErr(null);
     try {
+      // Log before encrypting
+      console.log("Original file object:", file);
+      console.log("Original file name:", file.name, "size:", file.size, "type:", file.type);
+
       // Step 1: Encrypt
       toast({ title: "Encrypting file...", description: "Your file is being encrypted." });
       const encryptedBlob = await encryptFileWithPassword(file);
+
+      console.log("Encrypted blob:", encryptedBlob);
+      console.log("Encrypted blob size:", encryptedBlob.size, "type:", encryptedBlob.type);
 
       // Step 2: Bundle metadata + encrypted file
       const metadata = {
@@ -124,8 +152,9 @@ const FileUpload: React.FC = () => {
       setErr("Upload failed. Try again.");
       toast({
         title: "Upload Failed",
-        description: "Please try again.",
+        description: e && typeof e === "object" && "message" in e ? e.message : "Please try again.",
       });
+      console.error("Upload error:", e);
     }
     setUploading(false);
   };
