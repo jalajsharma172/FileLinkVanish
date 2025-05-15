@@ -1,4 +1,3 @@
-
 import * as openpgp from "openpgp";
 
 // A predefined password. Change this to rotate platform encryption.
@@ -6,9 +5,10 @@ const PLATFORM_PASSWORD = "FileSendOpenPGP2024Secret!";
 
 export async function encryptFileWithPassword(file: File): Promise<Blob> {
   const fileBuffer = await file.arrayBuffer();
+  const uint8Array = new Uint8Array(fileBuffer);
 
   const encrypted = await openpgp.encrypt({
-    message: await openpgp.createMessage({ binary: fileBuffer }),
+    message: await openpgp.createMessage({ binary: uint8Array }),
     passwords: [PLATFORM_PASSWORD],
     format: "binary",
   });

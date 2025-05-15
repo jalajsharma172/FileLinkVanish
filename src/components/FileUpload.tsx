@@ -22,11 +22,28 @@ async function bundleMetadataAndEncryptedFile({
   metadata: any;
 }): Promise<FormData> {
   const formData = new FormData();
-  const metadataBlob = new Blob([JSON.stringify({ ...metadata, originalName: file.name })], {
+  // Create a single JSON file containing both metadata and file info
+  const metadataBlob = new Blob([JSON.stringify({
+    ...metadata,
+    originalName: file.name,
+    fileType: file.type,
+    fileSize: file.size
+  })], {
     type: "application/json",
   });
-  formData.append("file", encryptedBlob, file.name + ".pgp");
-  formData.append("metadata", metadataBlob, "metadata.json");
+  
+  // Pinata expects a single file with metadata
+  formData.append("file", encryptedBlob, "encrypted_file.pgp");
+  formData.append("pinataMetadata", JSON.stringify({
+    name: "Secure File Share",
+    keyvalues: {
+      originalName: file.name,
+      fileType: file.type,
+      fileSize: file.size.toString(),
+      ...metadata
+    }
+  }));
+  
   return formData;
 }
 
@@ -97,7 +114,7 @@ const FileUpload: React.FC = () => {
     if (!e.target.files?.[0]) return;
     chooseFile(e.target.files[0]);
   };
-
+//Check File Size
   const chooseFile = (f: File) => {
     if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
       setErr(`File too large (max ${MAX_FILE_SIZE_MB}MB)`);
@@ -110,7 +127,10 @@ const FileUpload: React.FC = () => {
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    if (!e.dataTransfer.files?.[0]) return;
+    if (!e.dataTransfer.files?.[0]){
+      setErr(`Only 1 File is allowed.`);
+      setFile(null);
+      return;}
     chooseFile(e.dataTransfer.files[0]);
   };
 
