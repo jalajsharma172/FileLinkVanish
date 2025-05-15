@@ -4,6 +4,7 @@ import ExpirySelector from "./ExpirySelector";
 import ShareLinkModal from "./ShareLinkModal";
 import { toast } from "@/hooks/use-toast";
 import { Upload, FileUp } from "lucide-react";
+import { encryptFileWithPassword } from "@/utils/encryption";
 
 const MAX_FILE_SIZE_MB = 25;
 
@@ -11,35 +12,51 @@ const MAX_FILE_SIZE_MB = 25;
 const PINATA_API_KEY = "cef51513720833c1d72b";
 const PINATA_SECRET_API_KEY = "8fc9833cc8bc4bb0e31972ff969112879b6cd5e3c8dcbe3f576e0db1fcc0e397";
 
-async function uploadToPinata(file: File) {
-  const url = "https://api.pinata.cloud/pinning/pinFileToIPFS";
+// New: bundle metadata and encrypted file as a "FileBundle" (barebones json+file)
+async function bundleMetadataAndEncryptedFile({
+  file,
+  encryptedBlob,
+  metadata,
+}: {
+  file: File;
+  encryptedBlob: Blob;
+  metadata: any;
+}): Promise<FormData> {
   const formData = new FormData();
-  formData.append("file", file);
+  const metadataBlob = new Blob([JSON.stringify({ ...metadata, originalName: file.name })], {
+    type: "application/json",
+  });
+  formData.append("file", encryptedBlob, file.name + ".pgp");
+  formData.append("metadata", metadataBlob, "metadata.json");
+  return formData;
+}
 
-  // Pinata requires these headers
+async function uploadToPinata(formData: FormData) {
+  const url = "https://api.pinata.cloud/pinning/pinFileToIPFS";
   const headers: Record<string, string> = {
-    "pinata_api_key": PINATA_API_KEY,
-    "pinata_secret_api_key": PINATA_SECRET_API_KEY,
+    pinata_api_key: PINATA_API_KEY,
+    pinata_secret_api_key: PINATA_SECRET_API_KEY,
   };
-
-  // Using fetch for file upload
   const res = await fetch(url, {
     method: "POST",
     body: formData,
     headers,
   });
-
-  // Pinata's API returns a JSON result with the IPFS hash
-  if (!res.ok) {
-    throw new Error("IPFS upload failed");
-  }
+  if (!res.ok) throw new Error("IPFS upload failed");
   const data = await res.json();
   return data.IpfsHash;
 }
 
+const downloadOptions = [
+  { key: 1, label: "One-time (1)" },
+  { key: 3, label: "Up to 3 downloads" },
+  { key: 99999, label: "Unlimited" },
+];
+
 const FileUpload: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [expiry, setExpiry] = useState<"one-time" | "1h" | "24h" | "7d">("one-time");
+  const [downloadLimit, setDownloadLimit] = useState(1);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -74,14 +91,34 @@ const FileUpload: React.FC = () => {
     setUploading(true);
     setErr(null);
     try {
-      // Upload to Pinata IPFS
-      const ipfsHash = await uploadToPinata(file);
-      const gatewayLink = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+      // Step 1: Encrypt
+      toast({ title: "Encrypting file...", description: "Your file is being encrypted." });
+      const encryptedBlob = await encryptFileWithPassword(file);
+
+      // Step 2: Bundle metadata + encrypted file
+      const metadata = {
+        expiry,
+        downloadLimit,
+        uploadTime: Date.now(),
+      };
+      const bundleFormData = await bundleMetadataAndEncryptedFile({
+        file,
+        encryptedBlob,
+        metadata,
+      });
+
+      // Step 3: Upload bundle to Pinata/IPFS
+      toast({ title: "Uploading to IPFS...", description: "Almost done!" });
+      const ipfsHash = await uploadToPinata(bundleFormData);
+
+      // Step 4: Generate shareable link
+      const gatewayLink = `${window.location.origin}/file/${ipfsHash}`;
+
       setShareUrl(gatewayLink);
       setFile(null);
       toast({
-        title: "File uploaded to IPFS!",
-        description: "Share or visit your gateway link.",
+        title: "File encrypted & uploaded!",
+        description: "Your shareable link is ready.",
       });
     } catch (e) {
       setErr("Upload failed. Try again.");
@@ -131,7 +168,30 @@ const FileUpload: React.FC = () => {
         </div>
       </div>
       {err && <div className="text-red-500 mb-3">{err}</div>}
+
+      {/* Expiry UI */}
       <ExpirySelector expiry={expiry} setExpiry={setExpiry} disabled={uploading} />
+
+      {/* Download limit UI */}
+      <div className="mb-2 flex flex-col items-center">
+        <span className="text-gray-600 mb-1 text-sm font-medium">Download limit:</span>
+        <div className="flex gap-2 flex-wrap justify-center mt-1">
+          {downloadOptions.map((opt) => (
+            <button
+              className={`py-2 px-4 rounded-lg border transition-all text-sm font-medium 
+                ${downloadLimit === opt.key ? "bg-primary text-white shadow border-primary" : "bg-white text-primary border-gray-200"}
+                hover:shadow-md hover:border-primary focus:outline-none`}
+              key={opt.key}
+              disabled={uploading}
+              onClick={() => !uploading && setDownloadLimit(opt.key)}
+              type="button"
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <button
         disabled={!file || uploading}
         className="bg-primary text-white py-2 px-7 rounded-md shadow hover:bg-primary/90 transition-all mt-4 mb-2 w-full disabled:opacity-60"
@@ -140,10 +200,10 @@ const FileUpload: React.FC = () => {
         {uploading ? (
           <span className="flex items-center justify-center gap-2">
             <Upload className="animate-spin" size={18} />
-            Uploading…
+            {file ? "Encrypting & Uploading…" : "Uploading…"}
           </span>
         ) : file ? (
-          "Upload File"
+          "Encrypt & Upload"
         ) : (
           "Choose a File"
         )}
@@ -152,10 +212,7 @@ const FileUpload: React.FC = () => {
         Max file size: {MAX_FILE_SIZE_MB}MB. No login required.
       </div>
       {shareUrl && (
-        <ShareLinkModal
-          link={shareUrl}
-          reset={() => setShareUrl(null)}
-        />
+        <ShareLinkModal link={shareUrl} reset={() => setShareUrl(null)} />
       )}
     </>
   );
