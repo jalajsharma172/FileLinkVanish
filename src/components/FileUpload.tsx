@@ -1,0 +1,149 @@
+
+import React, { useRef, useState } from "react";
+import ExpirySelector from "./ExpirySelector";
+import ShareLinkModal from "./ShareLinkModal";
+import { toast } from "@/hooks/use-toast";
+import { Upload, FileUp } from "lucide-react";
+
+const MAX_FILE_SIZE_MB = 25;
+
+const fakeUploadToApi = async (
+  file: File,
+  expiry: string
+): Promise<{ id: string }> => {
+  // Simulate API upload + response
+  await new Promise((r) => setTimeout(r, 1400));
+  return { id: (Math.random() + 1).toString(36).substring(7) };
+};
+
+const FileUpload: React.FC = () => {
+  const [file, setFile] = useState<File | null>(null);
+  const [expiry, setExpiry] = useState<"one-time" | "1h" | "24h" | "7d">(
+    "one-time"
+  );
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [shareId, setShareId] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const onFileChangeRaw = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.[0]) return;
+    chooseFile(e.target.files[0]);
+  };
+
+  const chooseFile = (f: File) => {
+    if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      setErr(`File too large (max ${MAX_FILE_SIZE_MB}MB)`);
+      setFile(null);
+      return;
+    }
+    setErr(null);
+    setFile(f);
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!e.dataTransfer.files?.[0]) return;
+    chooseFile(e.dataTransfer.files[0]);
+  };
+
+  const onDragOver = (e: React.DragEvent) => e.preventDefault();
+
+  const handleUpload = async () => {
+    if (!file) return;
+    setUploading(true);
+    setErr(null);
+    try {
+      // Replace with real API call to `/api/upload`
+      const { id } = await fakeUploadToApi(file, expiry);
+      setShareId(id);
+      setFile(null);
+      toast({
+        title: "File uploaded!",
+        description: "Your shareable link is ready.",
+      });
+    } catch (e) {
+      setErr("Upload failed. Try again.");
+      toast({
+        title: "Upload Failed",
+        description: "Please try again.",
+      });
+    }
+    setUploading(false);
+  };
+
+  return (
+    <>
+      <div
+        className={`border-2 border-dashed rounded-xl px-6 py-10 flex flex-col items-center justify-center bg-white transition-all ${
+          file ? "border-primary" : "border-gray-300"
+        } mb-4 relative`}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
+      >
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="absolute inset-0 opacity-0 cursor-pointer"
+          style={{ zIndex: 2 }}
+          tabIndex={-1}
+          onChange={onFileChangeRaw}
+          disabled={uploading}
+        />
+        <div className="flex flex-col items-center gap-3 z-1 pointer-events-none">
+          <FileUp
+            size={44}
+            className="text-primary pointer-events-none"
+          />
+          <span className="font-medium text-gray-800">
+            {file ? file.name : "Drag & drop a file here"}
+          </span>
+          <span className="text-xs text-gray-500">
+            or <span
+              className="underline cursor-pointer text-primary"
+              onClick={() => fileInputRef.current?.click()}
+              tabIndex={0}
+              role="button"
+              style={{ pointerEvents: "auto" }}
+            >browse</span>
+          </span>
+        </div>
+      </div>
+      {err && <div className="text-red-500 mb-3">{err}</div>}
+      <ExpirySelector
+        expiry={expiry}
+        setExpiry={setExpiry}
+        disabled={uploading}
+      />
+      <button
+        disabled={!file || uploading}
+        className="bg-primary text-white py-2 px-7 rounded-md shadow hover:bg-primary/90 transition-all mt-4 mb-2 w-full disabled:opacity-60"
+        onClick={handleUpload}
+      >
+        {uploading ? (
+          <span className="flex items-center justify-center gap-2">
+            <Upload className="animate-spin" size={18} />
+            Uploading…
+          </span>
+        ) : file ? (
+          "Upload File"
+        ) : (
+          "Choose a File"
+        )}
+      </button>
+      <div className="text-xs text-gray-400 text-center mb-2">
+        Max file size: {MAX_FILE_SIZE_MB}MB.
+        {" "}No login required.
+      </div>
+      {shareId && (
+        <ShareLinkModal
+          link={window.location.origin + "/file/" + shareId}
+          reset={() => setShareId(null)}
+        />
+      )}
+    </>
+  );
+};
+
+export default FileUpload;
