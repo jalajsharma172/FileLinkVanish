@@ -7,23 +7,42 @@ import { Upload, FileUp } from "lucide-react";
 
 const MAX_FILE_SIZE_MB = 25;
 
-const fakeUploadToApi = async (
-  file: File,
-  expiry: string
-): Promise<{ id: string }> => {
-  // Simulate API upload + response
-  await new Promise((r) => setTimeout(r, 1400));
-  return { id: (Math.random() + 1).toString(36).substring(7) };
-};
+// Pinata credentials (publishable for demo)
+const PINATA_API_KEY = "cef51513720833c1d72b";
+const PINATA_SECRET_API_KEY = "8fc9833cc8bc4bb0e31972ff969112879b6cd5e3c8dcbe3f576e0db1fcc0e397";
+
+async function uploadToPinata(file: File) {
+  const url = "https://api.pinata.cloud/pinning/pinFileToIPFS";
+  const formData = new FormData();
+  formData.append("file", file);
+
+  // Pinata requires these headers
+  const headers: Record<string, string> = {
+    "pinata_api_key": PINATA_API_KEY,
+    "pinata_secret_api_key": PINATA_SECRET_API_KEY,
+  };
+
+  // Using fetch for file upload
+  const res = await fetch(url, {
+    method: "POST",
+    body: formData,
+    headers,
+  });
+
+  // Pinata's API returns a JSON result with the IPFS hash
+  if (!res.ok) {
+    throw new Error("IPFS upload failed");
+  }
+  const data = await res.json();
+  return data.IpfsHash;
+}
 
 const FileUpload: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
-  const [expiry, setExpiry] = useState<"one-time" | "1h" | "24h" | "7d">(
-    "one-time"
-  );
+  const [expiry, setExpiry] = useState<"one-time" | "1h" | "24h" | "7d">("one-time");
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [shareId, setShareId] = useState<string | null>(null);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,13 +74,14 @@ const FileUpload: React.FC = () => {
     setUploading(true);
     setErr(null);
     try {
-      // Replace with real API call to `/api/upload`
-      const { id } = await fakeUploadToApi(file, expiry);
-      setShareId(id);
+      // Upload to Pinata IPFS
+      const ipfsHash = await uploadToPinata(file);
+      const gatewayLink = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+      setShareUrl(gatewayLink);
       setFile(null);
       toast({
-        title: "File uploaded!",
-        description: "Your shareable link is ready.",
+        title: "File uploaded to IPFS!",
+        description: "Share or visit your gateway link.",
       });
     } catch (e) {
       setErr("Upload failed. Try again.");
@@ -92,30 +112,26 @@ const FileUpload: React.FC = () => {
           disabled={uploading}
         />
         <div className="flex flex-col items-center gap-3 z-1 pointer-events-none">
-          <FileUp
-            size={44}
-            className="text-primary pointer-events-none"
-          />
+          <FileUp size={44} className="text-primary pointer-events-none" />
           <span className="font-medium text-gray-800">
             {file ? file.name : "Drag & drop a file here"}
           </span>
           <span className="text-xs text-gray-500">
-            or <span
+            or{" "}
+            <span
               className="underline cursor-pointer text-primary"
               onClick={() => fileInputRef.current?.click()}
               tabIndex={0}
               role="button"
               style={{ pointerEvents: "auto" }}
-            >browse</span>
+            >
+              browse
+            </span>
           </span>
         </div>
       </div>
       {err && <div className="text-red-500 mb-3">{err}</div>}
-      <ExpirySelector
-        expiry={expiry}
-        setExpiry={setExpiry}
-        disabled={uploading}
-      />
+      <ExpirySelector expiry={expiry} setExpiry={setExpiry} disabled={uploading} />
       <button
         disabled={!file || uploading}
         className="bg-primary text-white py-2 px-7 rounded-md shadow hover:bg-primary/90 transition-all mt-4 mb-2 w-full disabled:opacity-60"
@@ -133,13 +149,12 @@ const FileUpload: React.FC = () => {
         )}
       </button>
       <div className="text-xs text-gray-400 text-center mb-2">
-        Max file size: {MAX_FILE_SIZE_MB}MB.
-        {" "}No login required.
+        Max file size: {MAX_FILE_SIZE_MB}MB. No login required.
       </div>
-      {shareId && (
+      {shareUrl && (
         <ShareLinkModal
-          link={window.location.origin + "/file/" + shareId}
-          reset={() => setShareId(null)}
+          link={shareUrl}
+          reset={() => setShareUrl(null)}
         />
       )}
     </>
