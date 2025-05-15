@@ -12,15 +12,8 @@ const PINATA_API_KEY = "cef51513720833c1d72b";
 const PINATA_SECRET_API_KEY = "8fc9833cc8bc4bb0e31972ff969112879b6cd5e3c8dcbe3f576e0db1fcc0e397";
 
 // New: bundle metadata and encrypted file as a "FileBundle" (barebones json+file)
-async function bundleMetadataAndEncryptedFile({
-  file,
-  encryptedBlob,
-  metadata,
-}: {
-  file: File;
-  encryptedBlob: Blob;
-  metadata: any;
-}): Promise<FormData> {
+async function bundleMetadataAndEncryptedFile({file,  encryptedBlob,  metadata,}: 
+  { file: File;  encryptedBlob: Blob;  metadata: any;}): Promise<FormData> {
   const formData = new FormData();
   // Create a single JSON file containing both metadata and file info
   const metadataBlob = new Blob([JSON.stringify({
@@ -114,7 +107,7 @@ const FileUpload: React.FC = () => {
     if (!e.target.files?.[0]) return;
     chooseFile(e.target.files[0]);
   };
-//Check File Size
+//Set File ''''''''file'''''''' & Check File Size
   const chooseFile = (f: File) => {
     if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
       setErr(`File too large (max ${MAX_FILE_SIZE_MB}MB)`);
@@ -124,7 +117,7 @@ const FileUpload: React.FC = () => {
     setErr(null);
     setFile(f);
   };
-
+// Only 1 File is allowed , then save it as ''''''''''chooseFile''''''''''
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (!e.dataTransfer.files?.[0]){
@@ -133,6 +126,13 @@ const FileUpload: React.FC = () => {
       return;}
     chooseFile(e.dataTransfer.files[0]);
   };
+
+// bundleFormData- file(file.name,file.type,file.size),Encrypted File,
+// MetaData[
+// expiry,
+// downloadLimit,
+// uploadTime: Date.now(),
+// ]
 
   const onDragOver = (e: React.DragEvent) => e.preventDefault();
 
