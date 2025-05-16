@@ -237,7 +237,7 @@ const FileUpload: React.FC = () => {
 
       {/* Download limit UI */}
       <div className="mb-2 flex flex-col items-center">
-        <span className="text-gray-600 mb-1 text-sm font-medium">Download limit:</span>
+        <span className="text-gray-600 mb-1 text-sm font-medium">Download limit are:</span>
         <div className="flex gap-2 flex-wrap justify-center mt-1">
           {downloadOptions.map((opt) => (
             <button

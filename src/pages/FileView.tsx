@@ -7,18 +7,21 @@ import { getPlatformPassword } from "@/utils/encryption";
 import * as openpgp from "openpgp";
 
 const fetchJsonFromIPFS = async (ipfsHash: string) => {
+  toast({ title: "Fetching JSON", description: "Almost done!" });
   const response = await fetch(`https://ipfs.io/ipfs/${ipfsHash}`);
   if (!response.ok) throw new Error("Failed to fetch metadata");
   return response.json();
 };
 
 const fetchFileFromIPFS = async (ipfsHash: string) => {
+  toast({ title: "Fetching File", description: "Almost done!" });
   const response = await fetch(`https://ipfs.io/ipfs/${ipfsHash}`);
   if (!response.ok) throw new Error("Failed to fetch file");
   return response.blob();
 };
 
 const getExtensionFromMime = (mimeType: string) => {
+  toast({ title: "Find Extention", description: "Almost done!" });
   const mimeToExt: { [key: string]: string } = {
     "application/pdf": ".pdf",
     "text/plain": ".txt",
@@ -32,6 +35,7 @@ const getExtensionFromMime = (mimeType: string) => {
 };
 
 const decryptFile = async (encryptedBlob: Blob): Promise<Blob | null> => {
+  toast({ title: "Decrypting File", description: "Started !" });
   try {
     const encryptedData = await encryptedBlob.arrayBuffer();
     const message = await openpgp.readMessage({
@@ -47,6 +51,7 @@ const decryptFile = async (encryptedBlob: Blob): Promise<Blob | null> => {
     console.error("Decryption failed:", error);
     return null;
   }
+  toast({ title: "Decrypted File", description: "Done" });
 };
 
 const isFileExpired = (meta: any): boolean => {
@@ -88,6 +93,7 @@ const FileView: React.FC = () => {
         if (isFileExpired(metadata)) {
           setExpired(true);
           setLoading(false);
+          toast({ title: "File Expire", description: "You can't access File" });
           return;
         }
 
