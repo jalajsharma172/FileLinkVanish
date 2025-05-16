@@ -1,9 +1,11 @@
 import * as openpgp from "openpgp";
-
+import { toast } from "@/hooks/use-toast";
 // A predefined password. Change this to rotate platform encryption.
 const PLATFORM_PASSWORD = "FileSendOpenPGP2024Secret!";
 
 export async function encryptFileWithPassword(file: File): Promise<Blob> {
+   // Step 1: Encrypt
+   toast({ title: "Encrypting file...", description: "Your file is being encrypted." });
   const fileBuffer = await file.arrayBuffer();
   const uint8Array = new Uint8Array(fileBuffer);
 

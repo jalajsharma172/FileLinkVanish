@@ -5,67 +5,25 @@ import { toast } from "@/hooks/use-toast";
 import { Upload, FileUp } from "lucide-react";
 import { encryptFileWithPassword } from "@/utils/encryption";
 
-const MAX_FILE_SIZE_MB = 25;
+const MAX_FILE_SIZE_MB = 50;
 
 // Pinata credentials (publishable for demo)
 const PINATA_API_KEY = "cef51513720833c1d72b";
 const PINATA_SECRET_API_KEY = "8fc9833cc8bc4bb0e31972ff969112879b6cd5e3c8dcbe3f576e0db1fcc0e397";
 
-// New: bundle metadata and encrypted file as a "FileBundle" (barebones json+file)
-async function bundleMetadataAndEncryptedFile({file,  encryptedBlob,  metadata,}: 
-  { file: File;  encryptedBlob: Blob;  metadata: any;}): Promise<FormData> {
-  const formData = new FormData();
-  // Create a single JSON file containing both metadata and file info
-  const metadataBlob = new Blob([JSON.stringify({
-    ...metadata,
-    originalName: file.name,
-    fileType: file.type,
-    fileSize: file.size
-  })], {
-    type: "application/json",
-  });
-  
-  // Pinata expects a single file with metadata
-  formData.append("file", encryptedBlob, "encrypted_file.pgp");
-  formData.append("pinataMetadata", JSON.stringify({
-    name: "Secure File Share",
-    keyvalues: {
-      originalName: file.name,
-      fileType: file.type,
-      fileSize: file.size.toString(),
-      ...metadata
-    }
-  }));
-  
-  return formData;
-}
-
-async function uploadToPinata(formData: FormData) {
+// Upload file to Pinata/IPFS and return CID
+async function uploadFileToPinata(file: Blob) {
+  toast({ title: "Uploading file to IPFS...", description: "Processing file..." });
   const url = "https://api.pinata.cloud/pinning/pinFileToIPFS";
+  const formData = new FormData();
+  formData.append("file", file, "encrypted_file");
+
   const headers: Record<string, string> = {
     pinata_api_key: PINATA_API_KEY,
     pinata_secret_api_key: PINATA_SECRET_API_KEY,
-    // 'Content-Type': ...  <-- Do NOT include this!
   };
 
-  // Print debugging info for FormData entries
-  console.log("Uploading to Pinata: logging FormData entries ---");
-  for (const [key, value] of formData.entries()) {
-    if (
-      value &&
-      typeof value === "object" &&
-      "size" in value &&
-      "type" in value
-    ) {
-      // Most likely Blob or File
-      const obj = value as Blob;
-      console.log(
-        `FormData field: ${key}, filename: ${"name" in value ? (value as any).name : "blob"}, size: ${obj.size}, type: ${obj.type}`
-      );
-    } else {
-      console.log(`FormData field: ${key}, value: ${value}`);
-    }
-  }
+  console.log("Uploading file to Pinata...");
 
   try {
     const res = await fetch(url, {
@@ -76,15 +34,76 @@ async function uploadToPinata(formData: FormData) {
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Pinata upload failed, status:", res.status, "body:", errText);
-      throw new Error("IPFS upload failed: " + errText);
+      console.error("Pinata file upload failed, status:", res.status, "body:", errText);
+      throw new Error("IPFS file upload failed: " + errText);
     }
     const data = await res.json();
     return data.IpfsHash;
   } catch (e) {
-    console.error("Caught error in uploadToPinata:", e);
+    console.error("Caught error in uploadFileToPinata:", e);
     throw e;
   }
+}
+
+// Upload JSON to Pinata/IPFS and return CID
+async function uploadJsonToPinata(jsonBlob: Blob) {
+  toast({ title: "Uploading metadata to IPFS...", description: "Almost done!" });
+  const url = "https://api.pinata.cloud/pinning/pinJSONToIPFS";
+  const headers: Record<string, string> = {
+    pinata_api_key: PINATA_API_KEY,
+    pinata_secret_api_key: PINATA_SECRET_API_KEY,
+    "Content-Type": "application/json",
+  };
+
+  const jsonString = await jsonBlob.text();
+  console.log("Uploading to Pinata: JSON payload ---", jsonString);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      body: jsonString,
+      headers,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Pinata JSON upload failed, status:", res.status, "body:", errText);
+      throw new Error("IPFS JSON upload failed: " + errText);
+    }
+    const data = await res.json();
+    return data.IpfsHash;
+  } catch (e) {
+    console.error("Caught error in uploadJsonToPinata:", e);
+    throw e;
+  }
+}
+
+// Bundle metadata and encrypted file CID as JSON
+async function bundleMetadataAndEncryptedFile({
+  file,
+  metadata,
+}: {
+  file: File;
+  metadata: any;
+}): Promise<Blob> {
+  const encryptedBlob = await encryptFileWithPassword(file);
+
+  // Upload encrypted file to IPFS and get CID
+  const fileCid = await uploadFileToPinata(encryptedBlob);
+
+  const jsonData = {
+    fileName: file.name,
+    fileType: file.type,
+    fileSize: file.size,
+    fileExpiry: metadata.expiry,
+    fileDownloadLimit: metadata.downloadLimit,
+    fileUploadTime: metadata.uploadTime,
+    fileEncryptedCid: fileCid, // Store CID of encrypted file
+  };
+
+  return new Blob([JSON.stringify(jsonData)], {
+    type: "application/json",
+  });
 }
 
 const downloadOptions = [
@@ -100,14 +119,9 @@ const FileUpload: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const onFileChangeRaw = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0]) return;
-    chooseFile(e.target.files[0]);
-  };
-//Set File ''''''''file'''''''' & Check File Size
+  // Set File and Check File Size
   const chooseFile = (f: File) => {
     if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
       setErr(`File too large (max ${MAX_FILE_SIZE_MB}MB)`);
@@ -117,22 +131,22 @@ const FileUpload: React.FC = () => {
     setErr(null);
     setFile(f);
   };
-// Only 1 File is allowed , then save it as ''''''''''chooseFile''''''''''
+
+  // Only 1 File is allowed
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    if (!e.dataTransfer.files?.[0]){
+    if (!e.dataTransfer.files?.[0]) {
       setErr(`Only 1 File is allowed.`);
       setFile(null);
-      return;}
+      return;
+    }
     chooseFile(e.dataTransfer.files[0]);
   };
 
-// bundleFormData- file(file.name,file.type,file.size),Encrypted File,
-// MetaData[
-// expiry,
-// downloadLimit,
-// uploadTime: Date.now(),
-// ]
+  const onFileChangeRaw = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.[0]) return;
+    chooseFile(e.target.files[0]);
+  };
 
   const onDragOver = (e: React.DragEvent) => e.preventDefault();
 
@@ -145,28 +159,19 @@ const FileUpload: React.FC = () => {
       console.log("Original file object:", file);
       console.log("Original file name:", file.name, "size:", file.size, "type:", file.type);
 
-      // Step 1: Encrypt
-      toast({ title: "Encrypting file...", description: "Your file is being encrypted." });
-      const encryptedBlob = await encryptFileWithPassword(file);
-
-      console.log("Encrypted blob:", encryptedBlob);
-      console.log("Encrypted blob size:", encryptedBlob.size, "type:", encryptedBlob.type);
-
-      // Step 2: Bundle metadata + encrypted file
+      // Step 2: Bundle metadata + encrypted file CID
       const metadata = {
         expiry,
         downloadLimit,
         uploadTime: Date.now(),
       };
-      const bundleFormData = await bundleMetadataAndEncryptedFile({
+      const jsonBlob = await bundleMetadataAndEncryptedFile({
         file,
-        encryptedBlob,
         metadata,
       });
 
-      // Step 3: Upload bundle to Pinata/IPFS
-      toast({ title: "Uploading to IPFS...", description: "Almost done!" });
-      const ipfsHash = await uploadToPinata(bundleFormData);
+      // Step 3: Upload JSON metadata to Pinata/IPFS
+      const ipfsHash = await uploadJsonToPinata(jsonBlob);
 
       // Step 4: Generate shareable link
       const gatewayLink = `${window.location.origin}/file/${ipfsHash}`;
